@@ -90,6 +90,67 @@ mp1_ioctl:
 # ----------------- Functions private to this file -------------------
 
 update_missiles:
+		pushl %ebp
+		movl %esp, %ebp
+
+		pushl %ebx
+		pushl %edx
+		pushl %ecx
+		pushl %esi
+		pushl %edi # previous node
+		movl $mp1_missile_list, %ebx # get the ptr to first element of linked list of missiles
+		movl %ebx, %edi
+		movl (%ebx), %ebx # dereference the pointer to get first missile
+missile_iteration:
+		cmpl $0, %ebx # check if null
+		je finished
+
+		# check if exploding
+		movl EXPLODED(%ebx), %edx
+		cmpl $0, %edx
+		je not_exploding
+		jmp processing
+
+not_exploding:
+		# update position
+		movl VX(%ebx), %ecx
+		movl VY(%ebx), %esi
+		addl %ecx, X(%ebx)
+		addl %esi, Y(%ebx)
+
+
+processing:
+		# check if out of bounds
+		movl X(%ebx), %ecx
+		movl Y(%ebx), %esi
+		shrl $16, %ecx
+		shrl $16, %esi
+		cmpl $0, %ecx
+		jl out_of_bounds
+		cmpl $0, %esi
+		jl out_of_bounds
+		cmpl $79, %ecx
+		jg out_of_bounds
+		cmpl $24, %esi
+		jg out_of_bounds
+		jmp in_bounds
+
+out_of_bounds:
+
+in_bounds:
+
+
+		movl %ebx, %edi
+		movl NEXT(%ebx), %ebx # go to next missile
+		jmp missile_iteration
+
+finished:
+		popl %edi
+		popl %esi
+		popl %ecx
+		popl %edx
+		popl %ebx
+		leave
 		ret
 
 mp1_ioctl_startgame:
