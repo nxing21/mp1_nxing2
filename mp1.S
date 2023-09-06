@@ -120,18 +120,18 @@ dead_base:
 # now the base we want to draw is in %esi
 draw_base:
 		movl (%esi), %esi
-city_loop:
 		# now we need to find the location
 		# third city is (58, 24) to (62, 24)
 		# second city is (38, 24) to (42, 24)
 		# first city is (18, 24) to (22, 24)
 		movl $80, %eax
 		imull %ebx, %eax
-		imull $2, %eax
+		imull $2, %eax # initialize %eax to its starting location for that city
 		addl $48, %eax # %eax = location * 80 * 2 + 2 * y location (24)
 		subl $4, %eax
 		# %eax is at the starting location
 
+city_loop:
 		movl %esi, %ecx # move base picture to %cl
 		pushl %eax
 		call mp1_poke
@@ -139,16 +139,15 @@ city_loop:
 
 		# update counters
 		addl $1, %ecx
-		subl $1, %ebx
 		cmpl %ecx, $5
 		je done_city
 		addl $2, %eax
 		jmp city_loop
 
 done_city:
+		subl $1, %ebx
 		cmpl $0, %ebx # check if we're done with all cities
-		je redraw_crosshairs
-		jmp base_loop
+		jne base_loop
 
 redraw_crosshairs:
 		# draw the crosshair again
@@ -364,6 +363,9 @@ mp1_missile_remove:
 
 		# set the previous node->next to the next of current node
 		movl %edx, NEXT(%esi)
+
+		# check if current node is head
+		# and if so, update mp1_missile_list
 
 		# free current node
 		pushl %ecx
