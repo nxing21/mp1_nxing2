@@ -120,37 +120,57 @@ dead_base:
 # now the base we want to draw is in %esi
 draw_base:
 		movl (%esi), %esi
+city_loop:
 		# now we need to find the location
 		# third city is (58, 24) to (62, 24)
 		# second city is (38, 24) to (42, 24)
 		# first city is (18, 24) to (22, 24)
 		movl $80, %eax
-		imull $60, %ebx, %eax
+		imull %ebx, %eax
 		imull $2, %eax
-		addl $48, %eax
-		subl $2, %eax
+		addl $48, %eax # %eax = location * 80 * 2 + 2 * y location (24)
+		subl $4, %eax
 		# %eax is at the starting location
 
 		movl %esi, %ecx # move base picture to %cl
 		pushl %eax
 		call mp1_poke
-		addl $4, %esp
+		popl %eax
 
+		# update counters
 		addl $1, %ecx
 		subl $1, %ebx
-		cmpl %ecx, $4
+		cmpl %ecx, $5
 		je done_city
+		addl $2, %eax
+		jmp city_loop
 
 done_city:
-		cmpl $0, %ebx
-		je done_drawing
-		subl $16, %eax
+		cmpl $0, %ebx # check if we're done with all cities
+		je redraw_crosshairs
 		jmp base_loop
 
-done_drawing:
+redraw_crosshairs:
+		# draw the crosshair again
+		movl crosshairs_x, %edx
+		movl crosshairs_y, %esi 
 
+		imull $80, %edx, %edx
+		imull $2, %edx, %edx
 
+		imull $15, %esi, %esi
+		imull $2, %esi, %esi
 
+		addl %edx, %esi
+		movl %esi, %eax # now the byte location of crosshair is stored in %eax
+
+		# draw '+' at crosshair location
+		movb $0x2B, %cl
+		pushl %eax
+		call mp1_poke
+		popl %eax
+
+done_tasklet:
 		popl %esi
 		popl %edx
 		popl %edi
@@ -209,9 +229,8 @@ not_exploding:
 		# draw a space character to remove the missile
 		movb $0x20, %cl
 		pushl %eax
-		pushb
 		call mp1_poke
-		addl $4, %esp
+		popl %eax
 
 		# update position
 		movl VX(%ebx), %edx
@@ -294,7 +313,7 @@ continue:
 		movb EXPLOSION(%ebx), %cl
 		pushl %eax
 		call mp1_poke
-		addl $4, %esp
+		popl %eax
 		jmp finished_processing
 
 finished_exploding: # finished exploding, remove missile from list
@@ -319,7 +338,7 @@ simply_moving:
 		movb C(%ebx), %cl
 		pushl %eax
 		call mp1_poke
-		addl $4, %esp
+		popl %eax
 		jmp finished_processing
 
 finished_processing:
