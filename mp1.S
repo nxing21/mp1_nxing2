@@ -71,6 +71,32 @@ mp1_poke:
 
 .globl mp1_rtc_tasklet
 mp1_rtc_tasklet:
+		pushl %ebp
+		movl %esp, %ebp
+
+		pushl %ebx
+		pushl %edi # previous node
+		movl $mp1_missile_list, %ebx # get the ptr to first element of linked list of missiles
+		movl %ebx, %edi
+		movl (%ebx), %ebx # dereference the pointer to get first missile
+missile_iteration:
+		cmpl $0, %ebx # check if null
+		je finished
+
+		# call update_missiles, function to process missiles
+		pushl %ebx
+		pushl %edi
+		call update_missiles
+		addl $8, %esp
+
+		movl %ebx, %edi # update previous missile
+		movl NEXT(%ebx), %ebx # go to next missile
+		jmp missile_iteration
+
+finished:
+		popl %edi
+		popl %ebx
+		leave
 		ret
 
 # int mp1_ioctl(unsigned long arg, unsigned int cmd)
@@ -89,42 +115,36 @@ mp1_ioctl:
 
 # ----------------- Functions private to this file -------------------
 
+# inputs - previous node (%edi), current node (%ebx)
 update_missiles:
 		pushl %ebp
 		movl %esp, %ebp
-
-		pushl %ebx
-		pushl %edx
 		pushl %ecx
 		pushl %esi
-		pushl %edi # previous node
-		movl $mp1_missile_list, %ebx # get the ptr to first element of linked list of missiles
-		movl %ebx, %edi
-		movl (%ebx), %ebx # dereference the pointer to get first missile
-missile_iteration:
-		cmpl $0, %ebx # check if null
-		je finished
-
+		pushl %edx
+		
 		# check if exploding
 		movl EXPLODED(%ebx), %edx
 		cmpl $0, %edx
 		je not_exploding
-		jmp processing
+		jmp in_bounds
 
 not_exploding:
+		# store old location
+		movl X(%ebx), %edx
+		movl Y(%ebx), %eax
 		# update position
 		movl VX(%ebx), %ecx
 		movl VY(%ebx), %esi
 		addl %ecx, X(%ebx)
 		addl %esi, Y(%ebx)
 
-
 processing:
 		# check if out of bounds
 		movl X(%ebx), %ecx
 		movl Y(%ebx), %esi
-		shrl $16, %ecx
-		shrl $16, %esi
+		sarl $16, %ecx
+		sarl $16, %esi
 		cmpl $0, %ecx
 		jl out_of_bounds
 		cmpl $0, %esi
@@ -136,22 +156,61 @@ processing:
 		jmp in_bounds
 
 out_of_bounds:
+		pushl %ebx
+		pushl %edi
+		call mp1_missile_remove
+		addl $8, %esp
 
 in_bounds:
+		# check if missile has reached destination
+		# or if it is currently exploding
+		movl X(%ebx), %ecx
+		movl Y(%ebx), %esi
+		sarl $16, %ecx
+		sarl $16, %esi # get the location of x and y
+		cmpl %ecx, DEST_X(%ebx)
+		jne simply_moving
+		cmpl %esi, DEST_Y(%esi)
+		jne simply_moving
 
+exploding:
+		# need to caller-save %ecx and %edx
+		pushl %ecx
+		pushl %edx
 
-		movl %ebx, %edi
-		movl NEXT(%ebx), %ebx # go to next missile
-		jmp missile_iteration
+		pushl %edi
+		call missile_explode
+		addl $4, %esp
 
-finished:
-		popl %edi
+		popl %edx
+		popl %ecx
+
+simply_moving:
+		# erase missile from old position and draw it in new position
+
+		# first erase (old position is x: %edx, y: %eax)
+		imull $80, %edx, %edx
+		imull $2, %edx, %edx
+
+		imull $15, %eax, %eax
+		imull $2, %eax, %eax
+
+		addl %edx, %eax # now the byte location is stored in %eax
+
 		popl %esi
 		popl %ecx
-		popl %edx
-		popl %ebx
 		leave
 		ret
+
+# input - previous missile node, current missile node
+# erase missile from screen, remove missile from linked list, and free from memory
+mp1_missile_remove:
+		pushl %ebp
+		movl %esp, %ebp
+
+		leave
+		ret
+
 
 mp1_ioctl_startgame:
 		ret
