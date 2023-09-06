@@ -115,41 +115,62 @@ mp1_ioctl:
 
 # ----------------- Functions private to this file -------------------
 
-# inputs - previous node (%edi), current node (%ebx)
+# inputs - previous node, current node
 update_missiles:
 		pushl %ebp
 		movl %esp, %ebp
 		pushl %ecx
 		pushl %esi
 		pushl %edx
+		pushl %ebx
+		pushl %edi
+
+		movl 8(%ebp), %edi
+		movl 12(%ebp), %ebx
 		
 		# check if exploding
 		movl EXPLODED(%ebx), %edx
 		cmpl $0, %edx
-		je not_exploding
-		jmp in_bounds
+		jne exploding
 
 not_exploding:
 		# store old location
-		movl X(%ebx), %edx
+		movl X(%ebx), %ecx
 		movl Y(%ebx), %eax
+
+		# erase missile at old location
+		imull $80, %ecx, %ecx
+		imull $2, %ecx, %ecx
+
+		imull $15, %eax, %eax
+		imull $2, %eax, %eax
+
+		addl %ecx, %eax # now the old byte location is stored in %eax
+
+		# draw a space character to remove the missile
+		movb $0x20, %cl
+		pushl %eax
+		pushb
+		call mp1_poke
+		addl $4, %esp
+
 		# update position
-		movl VX(%ebx), %ecx
+		movl VX(%ebx), %edx
 		movl VY(%ebx), %esi
-		addl %ecx, X(%ebx)
+		addl %edx, X(%ebx)
 		addl %esi, Y(%ebx)
 
 processing:
 		# check if out of bounds
-		movl X(%ebx), %ecx
+		movl X(%ebx), %edx
 		movl Y(%ebx), %esi
-		sarl $16, %ecx
+		sarl $16, %edx
 		sarl $16, %esi
-		cmpl $0, %ecx
+		cmpl $0, %edx
 		jl out_of_bounds
 		cmpl $0, %esi
 		jl out_of_bounds
-		cmpl $79, %ecx
+		cmpl $79, %edx
 		jg out_of_bounds
 		cmpl $24, %esi
 		jg out_of_bounds
@@ -160,15 +181,15 @@ out_of_bounds:
 		pushl %edi
 		call mp1_missile_remove
 		addl $8, %esp
+		jmp finished_processing
 
 in_bounds:
 		# check if missile has reached destination
-		# or if it is currently exploding
-		movl X(%ebx), %ecx
+		movl X(%ebx), %edx
 		movl Y(%ebx), %esi
-		sarl $16, %ecx
+		sarl $16, %edx
 		sarl $16, %esi # get the location of x and y
-		cmpl %ecx, DEST_X(%ebx)
+		cmpl %edx, DEST_X(%ebx)
 		jne simply_moving
 		cmpl %esi, DEST_Y(%esi)
 		jne simply_moving
@@ -180,33 +201,104 @@ exploding:
 
 		pushl %edi
 		call missile_explode
-		addl $4, %esp
+		addl $12, %esp
 
-		popl %edx
-		popl %ecx
+		cmpl %eax, $0
+		je continue
+		# call mp1_notify_user
+		pushl %ecx
+		pushl %edx
+		pushl %eax
+		call mp1_notify_user
+		addl $12, %esp
 
-simply_moving:
-		# erase missile from old position and draw it in new position
+continue:
+		# decrement exploded field for the missile
+		subl $1, EXPLODED(%ebx)
+		cmpl $0, EXPLODED(%ebx)
+		je finished_exploding
+		
+		# still exploding, draw to screen
+		movl X(%ebx), %edx
+		movl Y(%ebx), %esi
 
-		# first erase (old position is x: %edx, y: %eax)
 		imull $80, %edx, %edx
 		imull $2, %edx, %edx
 
-		imull $15, %eax, %eax
-		imull $2, %eax, %eax
+		imull $15, %esi, %esi
+		imull $2, %esi, %esi
 
-		addl %edx, %eax # now the byte location is stored in %eax
+		addl %edx, %esi
+		movl %esi, %eax # now the new byte location is stored in %eax
 
+		# draw missile at new location
+		movb EXPLOSION(%ebx), %cl
+		pushl %eax
+		call mp1_poke
+		addl $4, %esp
+		jmp finished_processing
+
+finished_exploding: # finished exploding, remove missile from list
+		pushl %ebx
+		pushl %edi
+		call mp1_missile_remove
+		addl $8, %esp
+		jmp finished_processing
+
+simply_moving:
+		# draw it in the new location (new location is x: %edx, y: %esi)
+		imull $80, %edx, %edx
+		imull $2, %edx, %edx
+
+		imull $15, %esi, %esi
+		imull $2, %esi, %esi
+
+		addl %edx, %esi
+		movl %esi, %eax # now the new byte location is stored in %eax
+
+		# draw missile at new location
+		movb C(%ebx), %cl
+		pushl %eax
+		call mp1_poke
+		addl $4, %esp
+		jmp finished_processing
+
+finished_processing:
+		popl %edi
+		popl %ebx
+		popl %edx
 		popl %esi
 		popl %ecx
 		leave
 		ret
 
 # input - previous missile node, current missile node
-# erase missile from screen, remove missile from linked list, and free from memory
+# remove missile from linked list, and free from memory
 mp1_missile_remove:
 		pushl %ebp
 		movl %esp, %ebp
+		pushl %ebx
+		pushl %esi
+		pushl %edx
+		movl 12(%ebp), %ebx # store current node in %edx
+		movl 8(%ebp), %esi # store previous node in %esi
+		movl NEXT(%ebx), %edx # store next node in %ebx
+
+		# set the previous node->next to the next of current node
+		movl %edx, NEXT(%esi)
+
+		# free current node
+		pushl %ecx
+		pushl %edx
+		pushl %eax
+
+		pushl %ebx
+		call mp1_free
+		addl $16, %esp
+
+		popl %edx
+		popl %esi
+		popl %ebx
 
 		leave
 		ret
