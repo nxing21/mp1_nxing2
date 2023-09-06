@@ -76,6 +76,8 @@ mp1_rtc_tasklet:
 
 		pushl %ebx
 		pushl %edi # previous node
+		pushl %edx
+		pushl %esi
 		movl $mp1_missile_list, %ebx # get the ptr to first element of linked list of missiles
 		movl %ebx, %edi
 		movl (%ebx), %ebx # dereference the pointer to get first missile
@@ -94,6 +96,63 @@ missile_iteration:
 		jmp missile_iteration
 
 finished:
+		# finished processing, redraw cities
+		movl $3, %ebx # counter to which base we are currently on
+		movl $0, %ecx # width counter
+
+		# check if city is destroyed or not
+		movl $base_alive, %edx
+		movl (%edx), %edx
+
+base_loop:		
+		sarl $8, %edx # shift right to remove padding byte
+		cmpb $0, %dl
+		je alive_base
+		jmp dead_base
+
+alive_base:
+		movl $base_pic, %esi
+		jmp draw_base
+
+dead_base:
+		movl $dead_base_pic, %esi
+
+# now the base we want to draw is in %esi
+draw_base:
+		movl (%esi), %esi
+		# now we need to find the location
+		# third city is (58, 24) to (62, 24)
+		# second city is (38, 24) to (42, 24)
+		# first city is (18, 24) to (22, 24)
+		movl $80, %eax
+		imull $60, %ebx, %eax
+		imull $2, %eax
+		addl $48, %eax
+		subl $2, %eax
+		# %eax is at the starting location
+
+		movl %esi, %ecx # move base picture to %cl
+		pushl %eax
+		call mp1_poke
+		addl $4, %esp
+
+		addl $1, %ecx
+		subl $1, %ebx
+		cmpl %ecx, $4
+		je done_city
+
+done_city:
+		cmpl $0, %ebx
+		je done_drawing
+		subl $16, %eax
+		jmp base_loop
+
+done_drawing:
+
+
+
+		popl %esi
+		popl %edx
 		popl %edi
 		popl %ebx
 		leave
@@ -125,8 +184,8 @@ update_missiles:
 		pushl %ebx
 		pushl %edi
 
-		movl 8(%ebp), %edi
-		movl 12(%ebp), %ebx
+		movl 8(%ebp), %edi # store previous node in %edi
+		movl 12(%ebp), %ebx # store current node in %ebx
 		
 		# check if exploding
 		movl EXPLODED(%ebx), %edx
