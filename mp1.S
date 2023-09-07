@@ -123,12 +123,12 @@ draw_base:
 		# first city is (18, 24) to (22, 24)
 		# second city is (38, 24) to (42, 24)
 		# third city is (58, 24) to (62, 24)
-		# %eax = location * 80 * 2 + 2 * 24 (y location)
+		# %eax = 24 * 80 * 2 + 2 * x_location
 		# initialize %eax to its starting location for that city using above formula
-		movl $80, %eax
-		imull $20, %ebx, %eax # multiply x location (20, 40, or 60)
-		addl $48, %eax # plus 2 * 24
-		subl $160, %eax # move to starting place (minus 2 * 80)
+		imull $20, %ebx, %eax
+		subl $2, %eax # now eax is at the row location
+		addl $1920, %eax # + 2 * 80
+		imull $2, %eax # multiply by 2
 		# %eax is at the starting location
 
 city_loop:
@@ -152,14 +152,11 @@ done_city:
 
 redraw_crosshairs:
 		# draw the crosshair again
-		movl crosshairs_x, %edx
-		movl crosshairs_y, %esi 
+		movl crosshairs_y, %edx
+		movl crosshairs_x, %esi 
 
-		imull $80, %edx, %edx
-		imull $2, %edx, %edx
-
-		imull $15, %esi, %esi
-		imull $2, %esi, %esi
+		imull $160, %edx, %edx # 2 * 80
+		imull $30, %esi, %esi # 2 * 15
 
 		addl %edx, %esi
 		movl %esi, %eax # now the byte location of crosshair is stored in %eax
@@ -226,15 +223,12 @@ update_missiles:
 
 not_exploding:
 		# store old location
-		movl X(%ebx), %ecx
-		movl Y(%ebx), %eax
+		movl Y(%ebx), %ecx
+		movl X(%ebx), %eax
 
 		# erase missile at old location
-		imull $80, %ecx, %ecx
-		imull $2, %ecx, %ecx
-
-		imull $15, %eax, %eax
-		imull $2, %eax, %eax
+		imull $160, %ecx, %ecx
+		imull $30, %eax, %eax
 
 		addl %ecx, %eax # now the old byte location is stored in %eax
 
@@ -276,13 +270,13 @@ out_of_bounds:
 
 in_bounds:
 		# check if missile has reached destination
-		movl X(%ebx), %edx
-		movl Y(%ebx), %esi
+		movl Y(%ebx), %edx
+		movl X(%ebx), %esi
 		sarl $16, %edx
 		sarl $16, %esi # get the location of x and y
-		cmpl %edx, DEST_X(%ebx)
+		cmpl %edx, DEST_Y(%ebx)
 		jne simply_moving
-		cmpl %esi, DEST_Y(%esi)
+		cmpl %esi, DEST_X(%esi)
 		jne simply_moving
 
 exploding:
@@ -316,15 +310,12 @@ continue:
 		je finished_exploding
 		
 		# still exploding, draw to screen
-		movl X(%ebx), %edx
-		movl Y(%ebx), %esi
+		movl Y(%ebx), %edx
+		movl X(%ebx), %esi
 
 		# find byte location, 80 * x * 2 + 15 * y * 2
-		imull $80, %edx, %edx
-		imull $2, %edx, %edx
-
-		imull $15, %esi, %esi
-		imull $2, %esi, %esi
+		imull $160, %edx, %edx # 80 * 2
+		imull $30, %esi, %esi # 15 * 2
 
 		addl %edx, %esi
 		movl %esi, %eax # now the new byte location is stored in %eax
@@ -345,11 +336,8 @@ finished_exploding: # finished exploding, remove missile from list
 
 simply_moving:
 		# draw it in the new location (new location is x: %edx, y: %esi)
-		imull $80, %edx, %edx
-		imull $2, %edx, %edx
-
-		imull $15, %esi, %esi
-		imull $2, %esi, %esi
+		imull $160, %edx, %edx # 80 * 2
+		imull $30, %esi, %esi # 15 * 2
 
 		addl %edx, %esi
 		movl %esi, %eax # now the new byte location is stored in %eax
@@ -424,8 +412,8 @@ mp1_ioctl_startgame:
 		pushl %edi
 		# initialize variables used by driver,
 		# and set crosshair to (40, 12)
-		movl $40, crosshairs_x
 		movl $12, crosshairs_y
+		movl $40, crosshairs_x
 
 		movl $0, mp1_score
 		movl $0x00FFFFFF, base_alive
@@ -444,8 +432,47 @@ mp1_ioctl_addmissile:
 		pushl %esi
 		pushl %edi
 
+		movl 8(%ebp), %ebx # load the missile into %ebx
+		pushl %ecx
+		pushl %edx
+		pushl %eax
+		# call mp1_malloc
+		pushl $36
+		call mp1_malloc
+		addl $4, %esp
+		popl %eax
+		popl %edx
+		popl %ecx
+		cmpl $0, %eax # failed, malloc returns null pointer
+		je malloc_failed
 
+		# use the allocated space to copy from user to kernel
+		pushl %ecx
+		pushl %edx
+		pushl $36
+		pushl %ebx # from %ebx
+		pushl %edi # to %edi
+		call mp1_copy_from_user
+		popl %edi
+		popl %edx
+		popl %ecx
+		cmpl $0, %eax
+		je addmissile_failed
 
+		# succeeded, so update the head pointer
+		movl mp1_missile_list, NEXT(%edi)
+		movl %edi, mp1_missile_list
+		movl $0, %eax
+		jmp return_addmissile
+
+addmissile_failed: # free the memory that we allocated earlier
+		pushl %edi
+		call mp1_free
+		popl %edi
+malloc_failed: # malloc failed, so we don't need to free anything
+		movl $-1, %eax
+
+return_addmissile:
 		popl %edi
 		popl %esi
 		popl %ebx
@@ -460,14 +487,11 @@ mp1_ioctl_movexhairs:
 		pushl %edi
 
 		# erase old crosshair
-		movl crosshairs_x, %edx
-		movl crosshairs_y, %esi 
+		movl crosshairs_y, %edx
+		movl crosshairs_x, %esi 
 
-		imull $80, %edx, %edx
-		imull $2, %edx, %edx
-
-		imull $15, %esi, %esi
-		imull $2, %esi, %esi
+		imull $160, %edx, %edx
+		imull $30, %esi, %esi
 
 		addl %edx, %esi
 		movl %esi, %eax # now the byte location of crosshair is stored in %eax
@@ -510,11 +534,8 @@ draw_new_crosshair:
 		movl %ebx, %esi # store the y value in %esi
 
 		# drawing the crosshair
-		imull $80, %edx, %edx
-		imull $2, %edx, %edx
-
-		imull $15, %esi, %esi
-		imull $2, %esi, %esi
+		imull $160, %esi, %esi
+		imull $30, %edx, %edx
 
 		addl %edx, %esi
 		movl %esi, %eax # now the byte location of crosshair is stored in %eax
