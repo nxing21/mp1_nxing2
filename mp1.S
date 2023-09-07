@@ -100,14 +100,13 @@ finished:
 		movl $1, %ebx # counter to which base we are currently on
 
 		# check if city is destroyed or not
-		movl $base_alive, %edx
-		movl (%edx), %edx
+		movl base_alive, %edx
 
 base_loop:		
 		movl $0, %edi # set/reset width counter
 		cmpb $0, %dl # check if dead or alive city
-		je alive_base
-		jmp dead_base
+		je dead_base
+		jmp alive_base
 
 alive_base:
 		movl $base_pic, %esi
@@ -448,23 +447,22 @@ mp1_ioctl_addmissile:
 		movl 8(%ebp), %ebx # load the missile into %ebx
 		pushl %ecx
 		pushl %edx
-		pushl %eax
 		# call mp1_malloc
 		pushl $36
 		call mp1_malloc
 		addl $4, %esp
-		popl %eax
 		popl %edx
 		popl %ecx
 		cmpl $0, %eax # failed, malloc returns null pointer
 		je malloc_failed
+		movl %eax, %edi
 
-		# use the allocated space to copy from user to kernel
+		# i use the allocated space to copy from user to kernel
 		pushl %ecx
 		pushl %edx
 		pushl $36
-		pushl %ebx # from %ebx
-		pushl %edi # to %edi
+		pushl %ebx # from %ebx (missile)
+		pushl %edi # to %edi (newly allocated space)
 		call mp1_copy_from_user
 		popl %edi
 		popl %edx
@@ -638,6 +636,8 @@ endgame_loop:
 		cmpl $0, %ebx
 		je fully_cleared
 
+		movl NEXT(%ebx), %esi
+
 		# free the current node
 		pushl %ecx
 		pushl %edx
@@ -651,7 +651,7 @@ endgame_loop:
 		popl %edx
 		popl %ecx
 
-		movl NEXT(%ebx), %ebx
+		movl %esi, %ebx
 		jmp endgame_loop
 
 fully_cleared:
