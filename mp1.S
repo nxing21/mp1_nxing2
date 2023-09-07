@@ -97,7 +97,7 @@ missile_iteration:
 
 finished:
 		# finished processing, redraw cities
-		movl $1, %ebx # counter to center which base we are currently on
+		movl $1, %ebx # counter to which base we are currently on
 
 		# check if city is destroyed or not
 		movl $base_alive, %edx
@@ -115,10 +115,9 @@ alive_base:
 
 dead_base:
 		movl $dead_base_pic, %esi
-# now the base we want to draw is in %esi
+		# now the base we want to draw is in %esi
 
 draw_base:
-		movl (%esi), %esi
 		# now we need to find the location
 		# first city is (18, 24) to (22, 24)
 		# second city is (38, 24) to (42, 24)
@@ -127,21 +126,22 @@ draw_base:
 		# initialize %eax to its starting location for that city using above formula
 		imull $20, %ebx, %eax
 		subl $2, %eax # now eax is at the row location
-		addl $1920, %eax # + 2 * 80
+		addl $1920, %eax # + 24 * 80
 		imull $2, %eax # multiply by 2
 		# %eax is at the starting location
 
 city_loop:
-		movl %esi, %ecx # move base picture to %cl
+		movl (%esi), %ecx # move base picture to %cl
 		pushl %eax
 		call mp1_poke
 		popl %eax
 
 		# update counters
 		addl $1, %edi
-		cmpl %e, $5 # check if we are done with the current city (width of 5)
+		cmpl $5, %edi # check if we are done with the current city (width of 5)
 		je done_city
 		addl $2, %eax
+		addl $1, %esi
 		jmp city_loop
 
 done_city:
@@ -150,22 +150,8 @@ done_city:
 		cmpl $4, %ebx # check if we're done with all cities
 		jne base_loop
 
-redraw_crosshairs:
 		# draw the crosshair again
-		movl crosshairs_y, %edx
-		movl crosshairs_x, %esi 
-
-		imull $160, %edx, %edx # 2 * 80
-		imull $30, %esi, %esi # 2 * 15
-
-		addl %edx, %esi
-		movl %esi, %eax # now the byte location of crosshair is stored in %eax
-
-		# draw '+' at crosshair location
-		movb $0x2B, %cl
-		pushl %eax
-		call mp1_poke
-		popl %eax
+		call redraw_crosshairs
 
 done_tasklet:
 		popl %esi
@@ -202,6 +188,33 @@ jump_table:
 		.long mp1_ioctl_startgame, mp1_ioctl_addmissile, mp1_ioctl_movexhairs, mp1_ioctl_getstatus, mp1_ioctl_endgame
 
 # ----------------- Functions private to this file -------------------
+
+redraw_crosshairs:
+		pushl %ebp
+		movl %esp, %ebp
+		pushl %edx
+		pushl %esi
+		pushl %ecx
+		# draw the crosshair again
+		movl crosshairs_y, %edx
+		movl crosshairs_x, %esi 
+
+		imull $160, %edx, %edx # 2 * 80
+		imull $30, %esi, %esi # 2 * 15
+
+		addl %edx, %esi
+		movl %esi, %eax # now the byte location of crosshair is stored in %eax
+
+		# draw '+' at crosshair location
+		movb $0x2B, %cl
+		pushl %eax
+		call mp1_poke
+		popl %eax
+		popl %ecx
+		popl %esi
+		popl %edx
+		leave
+		ret
 
 # inputs - previous node, current node
 update_missiles:
@@ -292,7 +305,7 @@ exploding:
 		popl %ecx
 
 		# need to call mp1_notify_user if the output is not 0
-		cmpl %eax, $0
+		cmpl $0, %eax
 		je continue
 		# call mp1_notify_user
 		pushl %ecx
@@ -460,7 +473,8 @@ mp1_ioctl_addmissile:
 		je addmissile_failed
 
 		# succeeded, so update the head pointer
-		movl mp1_missile_list, NEXT(%edi)
+		movl mp1_missile_list, %esi
+		movl %esi, NEXT(%edi)
 		movl %edi, mp1_missile_list
 		movl $0, %eax
 		jmp return_addmissile
@@ -551,6 +565,7 @@ finished_movexhairs:
 		popl %edi
 		popl %esi
 		popl %ebx
+		leave
 		ret
 
 mp1_ioctl_getstatus:
@@ -569,21 +584,21 @@ mp1_ioctl_getstatus:
 check_city_1:
 		# checking city 1
 		movl base_alive, %edx
-		cmpb %dl, $0
+		cmpb $0, %dl
 		je check_city_2
 		addl $1, %ebx
 
 check_city_2:
 		rorl $1, %ebx
 		rorl $8, %edx
-		cmpb %dl, $0
+		cmpb $0, %dl
 		je check_city_3
 		addl $1, %ebx
 
 check_city_3:
 		rorl $1, %ebx
 		rorl $8, %edx
-		cmpb %dl, $0
+		cmpb $0, %dl
 		je done_checking_cities
 		addl $1, %ebx
 
@@ -598,7 +613,7 @@ done_checking_cities:
 		cmpl %eax, 0
 		je failed_copying
 		xorl %eax, %eax # succeeded copying, return 0
-		movl return_status
+		jmp return_status
 
 failed_copying:
 		movl $-1, %eax # failed copying, return -1
@@ -643,4 +658,5 @@ fully_cleared:
 		popl %edi
 		popl %esi
 		popl %ebx
+		leave
 		ret
