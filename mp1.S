@@ -85,10 +85,19 @@ missile_iteration:
 		je finished
 
 		# call update_missiles, function to process missiles
+		pushl %eax
+		pushl %ecx
+		pushl %edx
+
 		pushl %ebx
 		pushl %edi
 		call update_missiles
-		addl $8, %esp
+		popl %edi
+		popl %ebx
+
+		popl %edx
+		popl %ecx
+		popl %eax
 
 		movl %ebx, %edi # update previous missile
 		movl NEXT(%ebx), %ebx # go to next missile
@@ -148,7 +157,13 @@ done_city:
 		jne base_loop
 
 		# draw the crosshair again
+		pushl %eax
+		pushl %ecx
+		pushl %edx
 		call redraw_crosshairs
+		popl %edx
+		popl %ecx
+		popl %eax
 
 done_tasklet:
 		popl %esi
@@ -188,9 +203,9 @@ jump_table:
 redraw_crosshairs:
 		pushl %ebp
 		movl %esp, %ebp
-		pushl %edx
+		pushl %ebx
 		pushl %esi
-		pushl %ecx
+		pushl %edi
 		# draw the crosshair
 		movl crosshairs_y, %edx
 		movl crosshairs_x, %esi 
@@ -273,11 +288,19 @@ processing:
 
 out_of_bounds:
 		# remove the missile from the list if out of bounds
+		pushl %eax
+		pushl %ecx
+		pushl %edx
+
 		pushl %ebx
 		pushl %edi
 		call mp1_missile_remove
 		popl %edi
 		popl %ebx
+
+		popl %edx
+		popl %ecx
+		popl %eax
 		jmp finished_processing
 
 in_bounds:
@@ -292,7 +315,8 @@ in_bounds:
 		jne simply_moving
 
 exploding:
-		# need to caller-save %ecx and %edx
+		# need to caller-save %eax, %ecx, and %edx
+		pushl %eax
 		pushl %ecx
 		pushl %edx
 
@@ -316,6 +340,7 @@ exploding:
 		popl %ecx
 
 continue:
+		popl %eax
 		# decrement exploded field for the missile
 		subl $1, EXPLODED(%ebx)
 		cmpl $0, EXPLODED(%ebx)
@@ -342,11 +367,18 @@ continue:
 		jmp finished_processing
 
 finished_exploding: # finished exploding, erase missile, and remove missile from list
+		pushl %eax # caller-saved registers
+		pushl %ecx
+		pushl %edx
 
 		pushl %ebx
 		pushl %edi
 		call mp1_missile_remove
 		addl $8, %esp
+
+		popl %edx
+		popl %ecx
+		popl %eax
 		jmp finished_processing
 
 simply_moving:
@@ -366,8 +398,8 @@ simply_moving:
 
 finished_processing:
 		popl %edi
-		popl %ebx
 		popl %esi
+		popl %ebx
 		leave
 		ret
 
@@ -479,9 +511,17 @@ mp1_ioctl_addmissile:
 		jmp return_addmissile
 
 addmissile_failed: # free the memory that we allocated earlier
+		pushl %eax # caller-saved registers
+		pushl %ecx
+		pushl %edx
+
 		pushl %edi
 		call mp1_free
 		popl %edi
+
+		popl %edx
+		popl %ecx
+		popl %eax
 malloc_failed: # malloc failed, so we don't need to free anything
 		movl $-1, %eax
 
@@ -607,13 +647,19 @@ check_city_3:
 done_checking_cities:
 		rorl $14, %ebx # reset %ebx to correct rotation
 		# send back to user from kernel
+		pushl %ecx
+		pushl %edx
+
+		movl 8(%ebp), %esi # retrieve input
+		movl (%esi), %esi # dereference pointer
 		pushl $32
 		pushl %ebx
-		pushl 8(%ebp)
+		pushl %esi
 		call mp1_copy_to_user
 		addl $12, %esp
 		cmpl $0, %eax
 		je failed_copying
+
 		xorl %eax, %eax # succeeded copying, return 0
 		jmp return_status
 
@@ -621,6 +667,9 @@ failed_copying:
 		movl $-1, %eax # failed copying, return -1
 
 return_status:
+		popl %edx # caller-saved registers from copy_to_user
+		popl %ecx
+		# callee-saved registers
 		popl %edi
 		popl %esi
 		popl %ebx
