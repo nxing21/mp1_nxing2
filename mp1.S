@@ -222,13 +222,7 @@ update_missiles:
 
 		movl 8(%ebp), %edi # store previous node in %edi
 		movl 12(%ebp), %ebx # store current node in %ebx
-		
-		# check if exploding
-		movl EXPLODED(%ebx), %edx
-		cmpl $0, %edx
-		jne exploding
 
-not_exploding:
 		# store old location
 		movl Y(%ebx), %ecx
 		movl X(%ebx), %eax
@@ -236,8 +230,8 @@ not_exploding:
 		sarl $16, %eax
 
 		# erase missile at old location
-		imull $160, %ecx, %ecx
-		imull $2, %eax, %eax
+		imull $160, %ecx
+		imull $2, %eax
 
 		addl %ecx, %eax # now the old byte location is stored in %eax
 
@@ -246,6 +240,14 @@ not_exploding:
 		pushl %eax
 		call mp1_poke
 		popl %eax
+		
+		# check if exploding
+		movl EXPLODED(%ebx), %edx
+		cmpl $0, %edx
+		je not_exploding
+		jmp exploding
+
+not_exploding:
 
 		# update position
 		movl VX(%ebx), %edx
@@ -274,7 +276,8 @@ out_of_bounds:
 		pushl %ebx
 		pushl %edi
 		call mp1_missile_remove
-		addl $8, %esp
+		popl %edi
+		popl %ebx
 		jmp finished_processing
 
 in_bounds:
@@ -285,7 +288,7 @@ in_bounds:
 		sarl $16, %esi # get the location of x and y
 		cmpl %edx, DEST_Y(%ebx)
 		jne simply_moving
-		cmpl %esi, DEST_X(%esi)
+		cmpl %esi, DEST_X(%ebx)
 		jne simply_moving
 
 exploding:
@@ -293,7 +296,7 @@ exploding:
 		pushl %ecx
 		pushl %edx
 
-		pushl %edi
+		pushl %ebx
 		call missile_explode # call missile_explode for explosion
 		addl $4, %esp
 
@@ -321,21 +324,25 @@ continue:
 		# still exploding, draw to screen
 		movl Y(%ebx), %edx
 		movl X(%ebx), %esi
+		sarl $16, %edx
+		sarl $16, %esi # get the location of x and y
 
 		# find byte location, 80 * y * 2 + x * 2
-		imull $160, %edx, %edx # 80 * 2
+		imull $160, %edx # 80 * 2
+		imull $2, %esi
 
 		addl %edx, %esi
 		movl %esi, %eax # now the new byte location is stored in %eax
 
 		# draw missile at new location
-		movb EXPLOSION(%ebx), %cl
+		movb $EXPLOSION, %cl
 		pushl %eax
 		call mp1_poke
 		popl %eax
 		jmp finished_processing
 
-finished_exploding: # finished exploding, remove missile from list
+finished_exploding: # finished exploding, erase missile, and remove missile from list
+
 		pushl %ebx
 		pushl %edi
 		call mp1_missile_remove
