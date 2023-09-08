@@ -577,7 +577,6 @@ mp1_ioctl_getstatus:
 		pushl %edi
 
 		# retrieve the argument
-		movl 8(%ebp), %ebx
 		xorl %ebx, %ebx
 		movw mp1_score, %bx # move score into first 16 bits
 		rorl $16, %ebx
@@ -590,6 +589,7 @@ check_city_1:
 		addl $1, %ebx
 
 check_city_2:
+		# checking city 2
 		rorl $1, %ebx
 		rorl $8, %edx
 		cmpb $0, %dl
@@ -597,6 +597,7 @@ check_city_2:
 		addl $1, %ebx
 
 check_city_3:
+		# checking city 3
 		rorl $1, %ebx
 		rorl $8, %edx
 		cmpb $0, %dl
@@ -604,14 +605,14 @@ check_city_3:
 		addl $1, %ebx
 
 done_checking_cities:
-		rorl $13, %ebx # reset %ebx to correct rotation
+		rorl $14, %ebx # reset %ebx to correct rotation
 		# send back to user from kernel
-		pushl $36
+		pushl $32
 		pushl %ebx
 		pushl 8(%ebp)
 		call mp1_copy_to_user
 		addl $12, %esp
-		cmpl %eax, 0
+		cmpl $0, %eax
 		je failed_copying
 		xorl %eax, %eax # succeeded copying, return 0
 		jmp return_status
