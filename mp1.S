@@ -76,7 +76,6 @@ mp1_rtc_tasklet:
 
 		pushl %ebx
 		pushl %edi # previous node
-		pushl %edx
 		pushl %esi
 		movl $mp1_missile_list, %ebx # get the ptr to first element of linked list of missiles
 		movl %ebx, %edi
@@ -106,7 +105,6 @@ base_loop:
 		movl $0, %edi # set/reset width counter
 		cmpb $0, %dl # check if dead or alive city
 		je dead_base
-		jmp alive_base
 
 alive_base:
 		movl $base_pic, %esi
@@ -154,7 +152,6 @@ done_city:
 
 done_tasklet:
 		popl %esi
-		popl %edx
 		popl %edi
 		popl %ebx
 		leave
@@ -194,12 +191,12 @@ redraw_crosshairs:
 		pushl %edx
 		pushl %esi
 		pushl %ecx
-		# draw the crosshair again
+		# draw the crosshair
 		movl crosshairs_y, %edx
 		movl crosshairs_x, %esi 
 
-		imull $160, %edx, %edx # 2 * 80
-		imull $30, %esi, %esi # 2 * 15
+		imull $160, %edx # 2 * 80
+		imull $2, %esi
 
 		addl %edx, %esi
 		movl %esi, %eax # now the byte location of crosshair is stored in %eax
@@ -219,9 +216,7 @@ redraw_crosshairs:
 update_missiles:
 		pushl %ebp
 		movl %esp, %ebp
-		pushl %ecx
 		pushl %esi
-		pushl %edx
 		pushl %ebx
 		pushl %edi
 
@@ -237,10 +232,12 @@ not_exploding:
 		# store old location
 		movl Y(%ebx), %ecx
 		movl X(%ebx), %eax
+		sarl $16, %ecx
+		sarl $16, %eax
 
 		# erase missile at old location
 		imull $160, %ecx, %ecx
-		imull $30, %eax, %eax
+		imull $2, %eax, %eax
 
 		addl %ecx, %eax # now the old byte location is stored in %eax
 
@@ -325,9 +322,8 @@ continue:
 		movl Y(%ebx), %edx
 		movl X(%ebx), %esi
 
-		# find byte location, 80 * x * 2 + 15 * y * 2
+		# find byte location, 80 * y * 2 + x * 2
 		imull $160, %edx, %edx # 80 * 2
-		imull $30, %esi, %esi # 15 * 2
 
 		addl %edx, %esi
 		movl %esi, %eax # now the new byte location is stored in %eax
@@ -349,7 +345,7 @@ finished_exploding: # finished exploding, remove missile from list
 simply_moving:
 		# draw it in the new location (new location is x: %edx, y: %esi)
 		imull $160, %edx, %edx # 80 * 2
-		imull $30, %esi, %esi # 15 * 2
+		imull $2, %esi, %esi
 
 		addl %edx, %esi
 		movl %esi, %eax # now the new byte location is stored in %eax
@@ -364,9 +360,7 @@ simply_moving:
 finished_processing:
 		popl %edi
 		popl %ebx
-		popl %edx
 		popl %esi
-		popl %ecx
 		leave
 		ret
 
@@ -455,25 +449,25 @@ mp1_ioctl_addmissile:
 		popl %ecx
 		cmpl $0, %eax # failed, malloc returns null pointer
 		je malloc_failed
-		movl %eax, %edi
+		movl %eax, %edi # save this in %edi for later
 
-		# i use the allocated space to copy from user to kernel
+		# will use the allocated space to copy from user to kernel
 		pushl %ecx
 		pushl %edx
 		pushl $36
 		pushl %ebx # from %ebx (missile)
 		pushl %edi # to %edi (newly allocated space)
 		call mp1_copy_from_user
-		popl %edi
+		addl $12, %esp
 		popl %edx
 		popl %ecx
 		cmpl $0, %eax
-		je addmissile_failed
+		jne addmissile_failed
 
 		# succeeded, so update the head pointer
 		movl mp1_missile_list, %esi
-		movl %esi, NEXT(%edi)
-		movl %edi, mp1_missile_list
+		movl %esi, NEXT(%edi) # old head is the next value of our new node
+		movl %edi, mp1_missile_list # set new head
 		movl $0, %eax
 		jmp return_addmissile
 
@@ -502,8 +496,8 @@ mp1_ioctl_movexhairs:
 		movl crosshairs_y, %edx
 		movl crosshairs_x, %esi 
 
-		imull $160, %edx, %edx
-		imull $30, %esi, %esi
+		imull $160, %edx
+		imull $2, %esi
 
 		addl %edx, %esi
 		movl %esi, %eax # now the byte location of crosshair is stored in %eax
@@ -514,40 +508,42 @@ mp1_ioctl_movexhairs:
 		call mp1_poke
 		popl %eax
 
-		# check boundaries
 		movl 8(%ebp), %ebx # get the input (low 16 bits are x component, high 16 bits are y component)
-		movl %ebx, %edi # use %edi to track x
-		sarl $16, %ebx # use %ebx to track y
+		# reset original coordinates back
+		movl crosshairs_y, %edx
+		movl crosshairs_x, %esi
+		addw %bx, %si # add to x coordinate
+		sarl $16, %ebx
+		addw %bx, %dx # add to y coordinate
 
 		# first check x boundary
-		cmpw $0, %di
+		cmpw $0, %si
 		jge x_ge_zero
-		movl $0, crosshairs_x # x is below zero, so set it to 0
+		movl $0, %esi # x is below zero, so set it to 0
 		jmp check_y
 x_ge_zero:
-		cmpw $79, %di
+		cmpw $79, %si
 		jle check_y
-		movl $79, crosshairs_x # x is above 79, so set it to 79
+		movl $79, %esi # x is above 79, so set it to 79
 
 check_y:
-		cmpw $0, %bx
+		cmpw $0, %dx
 		jge y_ge_zero
-		movl $0, crosshairs_y # y is below zero, so set it to 0
+		movl $0, %edx # y is below zero, so set it to 0
 		jmp draw_new_crosshair
 y_ge_zero:
-		cmpw $79, %bx
+		cmpw $24, %dx
 		jle draw_new_crosshair
-		movl $79, crosshairs_y # y is above 79, so set it to 79
+		movl $24, %edx # y is above 24, so set it to 24
 		
-draw_new_crosshair:	
-		# then draw crosshair at the new location
-		xorl %edx, %edx
-		movw %di, %dx # store the x value in %edx
-		movl %ebx, %esi # store the y value in %esi
+draw_new_crosshair:
+		# update values
+		movl %edx, crosshairs_y
+		movl %esi, crosshairs_x
 
-		# drawing the crosshair
-		imull $160, %esi, %esi
-		imull $30, %edx, %edx
+		# then draw crosshair at the new location
+		imull $160, %edx # 2 * 80
+		imull $2, %esi
 
 		addl %edx, %esi
 		movl %esi, %eax # now the byte location of crosshair is stored in %eax
