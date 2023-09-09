@@ -163,9 +163,6 @@ draw_base:
 		# %eax is at the starting location
 
 city_loop:
-		pushl %ebx
-		pushl %esi
-		pushl %edi
 		movl (%esi), %ecx # move base picture to %cl
 		pushl %ecx
 		pushl %edx
