@@ -156,7 +156,7 @@ draw_base:
 		# %eax = 24 * 80 * 2 + 2 * x_location
 		# initialize %eax to its starting location for that city using above formula
 		movl %ebx, %eax
-		imull $20, %eax
+		imull $20, %eax # get to the center x value (either 20, 40, or 60)
 		subl $2, %eax # now eax is at the row location
 		addl $1920, %eax # + 24 * 80
 		imull $2, %eax # multiply by 2
