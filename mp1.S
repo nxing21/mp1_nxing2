@@ -74,96 +74,16 @@ mp1_rtc_tasklet:
 		pushl %ebp
 		movl %esp, %ebp
 
-		pushl %ebx
-		pushl %edi # previous node
+		pushl %ebx # callee-saved registers
+		pushl %edi
 		pushl %esi
-		movl $mp1_missile_list, %ebx # get the ptr to first element of linked list of missiles
-		movl %ebx, %edi
-		movl (%ebx), %ebx # dereference the pointer to get first missile
-missile_iteration:
-		cmpl $0, %ebx # check if null
-		je finished
-
-		# call update_missiles, function to process missiles
+		
+		# call the three functions that are used in tasklet
 		pushl %eax # caller-saved registers
 		pushl %ecx
 		pushl %edx
-
-		# function arguments
-		pushl %ebx
-		pushl %edi
 		call update_missiles
-		addl $8, %esp
-
-		popl %edx
-		popl %ecx
-		popl %eax
-
-		movl %ebx, %edi # update previous missile
-		movl NEXT(%ebx), %ebx # go to next missile
-		jmp missile_iteration
-
-finished:
-		# finished processing, redraw cities
-		movl $1, %ebx # counter to which base we are currently on
-
-		# check if city is destroyed or not
-		movl base_alive, %edx
-
-base_loop:		
-		movl $0, %edi # set/reset width counter
-		cmpb $0, %dl # check if dead or alive city
-		je dead_base
-
-alive_base:
-		movl $base_pic, %esi
-		jmp draw_base
-
-dead_base:
-		movl $dead_base_pic, %esi
-		# now the base we want to draw is in %esi
-
-draw_base:
-		# now we need to find the location
-		# first city is (18, 24) to (22, 24)
-		# second city is (38, 24) to (42, 24)
-		# third city is (58, 24) to (62, 24)
-		# %eax = 24 * 80 * 2 + 2 * x_location
-		# initialize %eax to its starting location for that city using above formula
-		imull $20, %ebx, %eax
-		subl $2, %eax # now eax is at the row location
-		addl $1920, %eax # + 24 * 80
-		imull $2, %eax # multiply by 2
-		# %eax is at the starting location
-
-city_loop:
-		movl (%esi), %ecx # move base picture to %cl
-		pushl %ecx
-		pushl %edx
-		pushl %eax
-		call mp1_poke
-		addl $4, %esp
-		popl %edx
-		popl %ecx
-
-		# update counters
-		addl $1, %edi
-		cmpl $5, %edi # check if we are done with the current city (width of 5)
-		je done_city
-		addl $2, %eax
-		addl $1, %esi
-		jmp city_loop
-
-done_city:
-		addl $1, %ebx
-		rorl $8, %edx
-		cmpl $4, %ebx # check if we're done with all cities
-		jne base_loop
-
-		# draw the crosshair again
-		pushl %eax
-		pushl %ecx
-		pushl %edx
+		call draw_cities
 		call redraw_crosshairs
 		popl %edx
 		popl %ecx
@@ -203,6 +123,75 @@ jump_table:
 		.long mp1_ioctl_startgame, mp1_ioctl_addmissile, mp1_ioctl_movexhairs, mp1_ioctl_getstatus, mp1_ioctl_endgame
 
 # ----------------- Functions private to this file -------------------
+draw_cities:
+		pushl %ebp
+		movl %esp, %ebp
+		pushl %ebx
+		pushl %esi
+		pushl %edi
+		# finished processing missiles, redraw cities
+		movl $1, %ebx # counter to which base we are currently on
+
+		# check if city is destroyed or not
+		movl base_alive, %edx
+
+base_loop:		
+		movl $0, %edi # set/reset width counter
+		cmpb $0, %dl # check if dead or alive city
+		je dead_base
+
+alive_base:
+		movl $base_pic, %esi
+		jmp draw_base
+
+dead_base:
+		movl $dead_base_pic, %esi
+		# now the base we want to draw is in %esi
+
+draw_base:
+		# now we need to find the location
+		# first city is (18, 24) to (22, 24)
+		# second city is (38, 24) to (42, 24)
+		# third city is (58, 24) to (62, 24)
+		# %eax = 24 * 80 * 2 + 2 * x_location
+		# initialize %eax to its starting location for that city using above formula
+		movl %ebx, %eax
+		imull $20, %eax
+		subl $2, %eax # now eax is at the row location
+		addl $1920, %eax # + 24 * 80
+		imull $2, %eax # multiply by 2
+		# %eax is at the starting location
+
+city_loop:
+		pushl %ebx
+		pushl %esi
+		pushl %edi
+		movl (%esi), %ecx # move base picture to %cl
+		pushl %ecx
+		pushl %edx
+		call mp1_poke
+		popl %edx
+		popl %ecx
+
+		# update counters
+		addl $1, %edi
+		cmpl $5, %edi # check if we are done with the current city (width of 5)
+		je done_city
+		addl $2, %eax
+		addl $1, %esi
+		jmp city_loop
+
+done_city:
+		addl $1, %ebx
+		rorl $8, %edx
+		cmpl $4, %ebx # check if we are done with all cities
+		jne base_loop
+
+		popl %edi
+		popl %esi
+		popl %ebx
+		leave
+		ret
 
 redraw_crosshairs:
 		pushl %ebp
@@ -224,9 +213,7 @@ redraw_crosshairs:
 		movb $0x2B, %cl
 		pushl %ecx
 		pushl %edx
-		pushl %eax
 		call mp1_poke
-		addl $4, %esp
 		popl %edx
 		popl %ecx
 
@@ -241,12 +228,16 @@ redraw_crosshairs:
 update_missiles:
 		pushl %ebp
 		movl %esp, %ebp
-		pushl %edi # callee-saved registers
-		pushl %ebx
+		pushl %ebx # callee-saved registers
 		pushl %esi
+		pushl %edi
 
-		movl 8(%ebp), %edi # store previous node in %edi
-		movl 12(%ebp), %ebx # store current node in %ebx
+		movl mp1_missile_list, %ebx # get the first element of linked list of missiles
+		movl $mp1_missile_list, %edi # use %edi to keep track of previous node
+		xorl %esi, %esi # flag for notify_user
+missile_iteration:
+		cmpl $0, %ebx # check if null
+		je finished_list
 
 		# store old location
 		movl Y(%ebx), %edx
@@ -264,9 +255,7 @@ update_missiles:
 		movl $0x20, %ecx
 		pushl %ecx
 		pushl %edx
-		pushl %eax
 		call mp1_poke
-		addl $4, %esp
 		popl %edx
 		popl %ecx
 		
@@ -280,23 +269,23 @@ not_exploding:
 
 		# update position
 		movl VX(%ebx), %edx
-		movl VY(%ebx), %esi
+		movl VY(%ebx), %ecx
 		addl %edx, X(%ebx)
-		addl %esi, Y(%ebx)
+		addl %ecx, Y(%ebx)
 
 processing:
 		# check if out of bounds
 		movl X(%ebx), %edx
-		movl Y(%ebx), %esi
+		movl Y(%ebx), %ecx
 		shrl $16, %edx # right shift by 16 to access high 16 bits
-		shrl $16, %esi
+		shrl $16, %ecx
 		cmpl $0, %edx
 		jl out_of_bounds
-		cmpl $0, %esi
+		cmpl $0, %ecx
 		jl out_of_bounds
 		cmpl $79, %edx
 		jg out_of_bounds
-		cmpl $24, %esi
+		cmpl $24, %ecx
 		jg out_of_bounds
 		jmp in_bounds
 
@@ -319,12 +308,12 @@ out_of_bounds:
 in_bounds:
 		# check if missile has reached destination
 		movl Y(%ebx), %edx
-		movl X(%ebx), %esi
+		movl X(%ebx), %ecx
 		shrl $16, %edx
-		shrl $16, %esi # get the location of x and y
+		shrl $16, %ecx # get the location of x and y
 		cmpl %edx, DEST_Y(%ebx)
 		jne simply_moving
-		cmpl %esi, DEST_X(%ebx)
+		cmpl %ecx, DEST_X(%ebx)
 		jne simply_moving
 
 exploding:
@@ -334,49 +323,51 @@ exploding:
 
 		pushl %ebx
 		call missile_explode # call missile_explode for explosion
-		addl $4, %esp
+		popl %ebx
 
 		popl %edx
 		popl %ecx
 
-		# need to call mp1_notify_user if the output is not 0
+		# need to call mp1_notify_user if the output is not 0, unless we already called
 		cmpl $0, %eax
 		je continue
+		
+		cmpl $0, %esi
+		jne continue
 		# call mp1_notify_user
-		pushl %ecx
-		pushl %edx
-		pushl %eax
-		call mp1_notify_user
 		popl %eax
+		popl %ecx
+		popl %edx
+		call mp1_notify_user
 		popl %edx
 		popl %ecx
+		popl %eax
+		addl $1, %esi
 
 continue:
 		# decrement exploded field for the missile
-		subl $1, EXPLODED(%ebx)
+		decl EXPLODED(%ebx)
 		cmpl $0, EXPLODED(%ebx)
 		je finished_exploding
 		
 		# still exploding, draw to screen
 		movl Y(%ebx), %edx
-		movl X(%ebx), %esi
+		movl X(%ebx), %ecx
 		shrl $16, %edx
-		shrl $16, %esi # get the location of x and y
+		shrl $16, %ecx # get the location of x and y
 
 		# find byte location, 80 * y * 2 + x * 2
 		imull $160, %edx # 80 * 2
-		imull $2, %esi
+		imull $2, %ecx
 
-		addl %edx, %esi
-		movl %esi, %eax # now the new byte location is stored in %eax
+		addl %edx, %ecx
+		movl %ecx, %eax # now the new byte location is stored in %eax
 
 		# draw missile at new location
 		movb $EXPLOSION, %cl
 		pushl %ecx
 		pushl %edx
-		pushl %eax
 		call mp1_poke
-		addl $4, %esp
 		popl %edx
 		popl %ecx
 		jmp finished_processing
@@ -397,28 +388,31 @@ finished_exploding: # finished exploding, erase missile, and remove missile from
 		jmp finished_processing
 
 simply_moving:
-		# draw it in the new location (new location is x: %edx, y: %esi)
-		imull $160, %edx, %edx # 80 * 2
-		imull $2, %esi, %esi
+		# draw it in the new location (new location is x: %edx, y: %ecx)
+		imull $160, %edx # 80 * 2
+		imull $2, %ecx
 
-		addl %edx, %esi
-		movl %esi, %eax # now the new byte location is stored in %eax
+		addl %edx, %ecx
+		movl %ecx, %eax # now the new byte location is stored in %eax
 
 		# draw missile at new location
 		movb C(%ebx), %cl
 		pushl %ecx
 		pushl %edx
-		pushl %eax
 		call mp1_poke
-		addl $4, %esp
 		popl %edx
 		popl %ecx
-		jmp finished_processing
 
-finished_processing:
+finished_processing:		
+		movl %ebx, %edi # update previous missile
+		movl NEXT(%ebx), %ebx # go to next missile
+		jmp missile_iteration
+
+finished_list:
+		popl %edi
 		popl %esi
 		popl %ebx
-		popl %edi
+
 		leave
 		ret
 
@@ -433,18 +427,17 @@ mp1_missile_remove:
 		movl 12(%ebp), %ebx # store current node in %ebx
 		movl 8(%ebp), %esi # store previous node in %esi
 		movl NEXT(%ebx), %edx # store next node in %edx
-
-		# set the previous node->next to the next of previous node
-		movl %edx, NEXT(%esi)
-
+		
 		# check if current node is head
 		# and if so, update mp1_missile_list
 		cmpl %ebx, mp1_missile_list
-		jne free_node
+		jne connect_nodes
 		# we need to update the head node
 		movl %edx, mp1_missile_list
 
-free_node:
+connect_nodes:
+		# set the previous node->next to the next node
+		movl %edx, NEXT(%esi)	
 		# free current node
 		# caller save %ecx, %edx, and %eax
 		pushl %ecx
@@ -541,7 +534,7 @@ addmissile_failed: # free the memory that we allocated earlier
 		popl %edx
 		popl %ecx
 		popl %eax
-malloc_failed: # malloc failed, so we don't need to free anything
+malloc_failed: # malloc failed, so we do not need to free anything
 		movl $-1, %eax
 
 return_addmissile:
@@ -572,9 +565,7 @@ mp1_ioctl_movexhairs:
 		movb $0x20, %cl
 		pushl %ecx
 		pushl %edx
-		pushl %eax
 		call mp1_poke
-		addl $4, %esp
 		popl %edx
 		popl %ecx
 
@@ -622,9 +613,7 @@ draw_new_crosshair:
 		movb $0x2B, %cl
 		pushl %ecx
 		pushl %edx
-		pushl %eax
 		call mp1_poke
-		addl $4, %esp
 		popl %edx
 		popl %ecx
 
