@@ -266,7 +266,6 @@ missile_iteration:
 		jmp exploding
 
 not_exploding:
-
 		# update position
 		movl VX(%ebx), %edx
 		movl VY(%ebx), %ecx
@@ -291,11 +290,13 @@ processing:
 
 out_of_bounds:
 		# remove the missile from the list if out of bounds
+		movl %ebx, %edx # store current node
+		movl NEXT(%ebx), %ebx # go to next missile
 		pushl %eax
 		pushl %ecx
 		pushl %edx
 
-		pushl %ebx
+		pushl %edx
 		pushl %edi
 		call mp1_missile_remove
 		addl $8, %esp
@@ -303,7 +304,7 @@ out_of_bounds:
 		popl %edx
 		popl %ecx
 		popl %eax
-		jmp finished_processing
+		jmp missile_iteration
 
 in_bounds:
 		# check if missile has reached destination
@@ -335,9 +336,9 @@ exploding:
 		cmpl $0, %esi
 		jne continue
 		# call mp1_notify_user
-		popl %eax
-		popl %ecx
-		popl %edx
+		pushl %eax
+		pushl %ecx
+		pushl %edx
 		call mp1_notify_user
 		popl %edx
 		popl %ecx
@@ -373,11 +374,13 @@ continue:
 		jmp finished_processing
 
 finished_exploding: # finished exploding, erase missile, and remove missile from list
+		movl %ebx, %edx # store current node
+		movl NEXT(%ebx), %ebx # go to next node
 		pushl %eax # caller-saved registers
 		pushl %ecx
 		pushl %edx
 
-		pushl %ebx
+		pushl %edx
 		pushl %edi
 		call mp1_missile_remove
 		addl $8, %esp
@@ -385,7 +388,7 @@ finished_exploding: # finished exploding, erase missile, and remove missile from
 		popl %edx
 		popl %ecx
 		popl %eax
-		jmp finished_processing
+		jmp missile_iteration
 
 simply_moving:
 		# draw it in the new location (new location is x: %edx, y: %ecx)
@@ -434,10 +437,12 @@ mp1_missile_remove:
 		jne connect_nodes
 		# we need to update the head node
 		movl %edx, mp1_missile_list
+		jmp free_node
 
 connect_nodes:
 		# set the previous node->next to the next node
 		movl %edx, NEXT(%esi)	
+free_node:
 		# free current node
 		# caller save %ecx, %edx, and %eax
 		pushl %ecx
@@ -676,7 +681,6 @@ done_checking_cities:
 
 		pushl %ecx
 		pushl %edx
-		movl 8(%ebp), %esi
 		pushl $4 # 4 bytes to be moved
 		pushl %eax # from kernel
 		pushl 8(%ebp) # to user
@@ -699,7 +703,7 @@ return_status:
 		pushl %ecx
 		pushl %edx
 
-		pushl %edi
+		pushl %edi # free memory we just allocated
 		call mp1_free
 		addl $4, %esp
 
@@ -721,31 +725,35 @@ mp1_ioctl_endgame:
 		pushl %esi
 		pushl %edi
 
+		movl mp1_missile_list, %ebx # current node
+		movl $mp1_missile_list, %edi # previous node
 endgame_loop:
 		# iterate through linked list and free all nodes
-		movl mp1_missile_list, %ebx
-		cmpl $0, %ebx
+		
+		cmpl $0, %ebx # check if we cleared everything
 		je fully_cleared
 
-		movl NEXT(%ebx), %esi # set next node to %esi
+		movl %ebx, %edx # store current node
+		movl NEXT(%ebx), %ebx
 
 		# free the current node
 		pushl %ecx
 		pushl %edx
 		pushl %eax
 
-		pushl %ebx
-		call mp1_free
-		addl $4, %esp
+		pushl %edx
+		pushl %edi
+		call mp1_missile_remove
+		addl $8, %esp
 
 		popl %eax
 		popl %edx
 		popl %ecx
 
-		movl %esi, %ebx
 		jmp endgame_loop
 
 fully_cleared:
+		xorl %eax, %eax # return 0
 		popl %edi
 		popl %esi
 		popl %ebx
