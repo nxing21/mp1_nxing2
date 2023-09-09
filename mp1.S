@@ -203,8 +203,8 @@ redraw_crosshairs:
 		movl crosshairs_y, %edx
 		movl crosshairs_x, %esi 
 
-		imull $160, %edx # 2 * 80
-		imull $2, %esi
+		imull $160, %edx # 2 * 80 * y
+		imull $2, %esi # + 2 * x
 
 		addl %edx, %esi
 		movl %esi, %eax # now the byte location of crosshair is stored in %eax
@@ -608,8 +608,8 @@ draw_new_crosshair:
 		movl %esi, crosshairs_x
 
 		# then draw crosshair at the new location
-		imull $160, %edx # 2 * 80
-		imull $2, %esi
+		imull $160, %edx # 2 * 80 * y
+		imull $2, %esi # + 2 * x
 
 		addl %edx, %esi
 		movl %esi, %eax # now the byte location of crosshair is stored in %eax
