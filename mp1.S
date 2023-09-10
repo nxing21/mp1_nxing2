@@ -745,7 +745,6 @@ endgame_loop:
 		popl %eax
 		popl %edx
 		popl %ecx
-
 		jmp endgame_loop
 
 fully_cleared:
