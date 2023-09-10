@@ -293,15 +293,15 @@ out_of_bounds:
 		pushl %ecx
 		pushl %edx
 
-		pushl %edx
-		pushl %edi
+		pushl %edx # current node
+		pushl %edi # previous node
 		call mp1_missile_remove
 		addl $8, %esp
 
 		popl %edx
 		popl %ecx
 		popl %eax
-		jmp missile_iteration
+		jmp missile_iteration # done processing current missile, loop back
 
 in_bounds:
 		# check if missile has reached destination
@@ -355,8 +355,8 @@ continue:
 		shrl $16, %ecx # get the location of x and y
 
 		# find byte location, 80 * y * 2 + x * 2
-		imull $160, %edx # 80 * 2
-		imull $2, %ecx
+		imull $160, %edx # 80 * 2 * y
+		imull $2, %ecx # + 2 * x
 
 		addl %edx, %ecx
 		movl %ecx, %eax # now the new byte location is stored in %eax
@@ -377,20 +377,20 @@ finished_exploding: # finished exploding, erase missile, and remove missile from
 		pushl %ecx
 		pushl %edx
 
-		pushl %edx
-		pushl %edi
+		pushl %edx # current node
+		pushl %edi # previous node
 		call mp1_missile_remove
 		addl $8, %esp
 
 		popl %edx
 		popl %ecx
 		popl %eax
-		jmp missile_iteration
+		jmp missile_iteration # done processing current missile, move to next one
 
 simply_moving:
 		# draw it in the new location (new location is x: %edx, y: %ecx)
-		imull $160, %edx # 80 * 2
-		imull $2, %ecx
+		imull $160, %edx # 80 * 2 * y
+		imull $2, %ecx # + 2 * x
 
 		addl %edx, %ecx
 		movl %ecx, %eax # now the new byte location is stored in %eax
@@ -412,7 +412,6 @@ finished_list:
 		popl %edi
 		popl %esi
 		popl %ebx
-
 		leave
 		ret
 
@@ -446,7 +445,7 @@ free_node:
 		pushl %edx
 		pushl %eax
 
-		pushl %ebx
+		pushl %ebx # current node
 		call mp1_free
 		addl $4, %esp
 
@@ -475,7 +474,7 @@ mp1_ioctl_startgame:
 		movl $40, crosshairs_x
 
 		movl $0, mp1_score
-		movl $0x00FFFFFF, base_alive
+		movl $0x00FFFFFF, base_alive # low 3 bytes are alive cities, highest bit is padding
 		movl $0, mp1_missile_list
 
 		popl %edi
@@ -507,7 +506,7 @@ mp1_ioctl_addmissile:
 		# will use the allocated space to copy from user to kernel
 		pushl %ecx
 		pushl %edx
-		pushl $36
+		pushl $36 # need to allocate 36 bytes
 		pushl %ebx # from %ebx (missile)
 		pushl %eax # to %eax (newly allocated space)
 		call mp1_copy_from_user
@@ -529,7 +528,7 @@ addmissile_failed: # free the memory that we allocated earlier
 		pushl %ecx
 		pushl %edx
 
-		pushl %edi
+		pushl %edi # free memory we just allocated
 		call mp1_free
 		popl %edi
 
@@ -557,8 +556,8 @@ mp1_ioctl_movexhairs:
 		movl crosshairs_y, %edx
 		movl crosshairs_x, %esi 
 
-		imull $160, %edx
-		imull $2, %esi
+		imull $160, %edx # 80 * 2 * y
+		imull $2, %esi # + 2 * x
 
 		addl %edx, %esi
 		movl %esi, %eax # now the byte location of crosshair is stored in %eax
@@ -620,7 +619,7 @@ draw_new_crosshair:
 		popl %ecx
 
 finished_movexhairs:
-		movl $0, %eax
+		movl $0, %eax # return 0 for success
 		popl %edi
 		popl %esi
 		popl %ebx
@@ -636,26 +635,26 @@ mp1_ioctl_getstatus:
 
 		xorl %ebx, %ebx
 		movw mp1_score, %bx # move score into first 16 bits
-		rorl $16, %ebx
+		rorl $16, %ebx # rotate so we can edit 16th, 17th, and 18th bit
 
 check_city_1:
-		# checking city 1
+		# checking city 1, add 1 to 1st bit if alive (will be rotated to 16th bit)
 		movl base_alive, %edx
 		cmpb $0, %dl
 		je check_city_2
 		addl $1, %ebx
 
 check_city_2:
-		# checking city 2
-		rorl $1, %ebx
+		# checking city 2, add 1 to 1st bit if alive (will be rotated to 17th bit)
+		rorl $1, %ebx # rotate to edit 17th bit
 		rorl $8, %edx
 		cmpb $0, %dl
 		je check_city_3
 		addl $1, %ebx
 
 check_city_3:
-		# checking city 3
-		rorl $1, %ebx
+		# checking city 3, add 1 to 1st bit if alive (will be rotated to 18th bit)
+		rorl $1, %ebx # rotate to edit 18th bit
 		rorl $8, %edx
 		cmpb $0, %dl
 		je done_checking_cities
@@ -667,7 +666,7 @@ done_checking_cities:
 		pushl %ecx
 		pushl %edx
 		
-		pushl $4
+		pushl $4 # allocate 4 bytes
 		call mp1_malloc
 		addl $4, %esp
 
@@ -738,8 +737,8 @@ endgame_loop:
 		pushl %edx
 		pushl %eax
 
-		pushl %edx
-		pushl %edi
+		pushl %edx # current node
+		pushl %edi # previous node
 		call mp1_missile_remove
 		addl $8, %esp
 
