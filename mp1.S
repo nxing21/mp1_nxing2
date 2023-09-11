@@ -123,6 +123,13 @@ jump_table:
 		.long mp1_ioctl_startgame, mp1_ioctl_addmissile, mp1_ioctl_movexhairs, mp1_ioctl_getstatus, mp1_ioctl_endgame
 
 # ----------------- Functions private to this file -------------------
+# void draw_cities(void)
+# uses the variable base_alive to check if each base is dead or alive
+# then draw the city in the correct location with the correct
+# dead/alive status
+# Inputs	: none
+# Outputs	: none
+# Registers	: Standard C calling convention
 draw_cities:
 		pushl %ebp
 		movl %esp, %ebp
@@ -153,12 +160,12 @@ draw_base:
 		# first city is (18, 24) to (22, 24)
 		# second city is (38, 24) to (42, 24)
 		# third city is (58, 24) to (62, 24)
-		# %eax = 24 * 80 * 2 + 2 * x_location
+		# formula: %eax = 24 * 80 * 2 + 2 * x_location
 		# initialize %eax to its starting location for that city using above formula
 		movl %ebx, %eax
 		imull $20, %eax # get to the center x value (either 20, 40, or 60)
 		subl $2, %eax # now eax is at the row location
-		addl $1920, %eax # + 24 * 80
+		addl $1920, %eax # + 24 * 80 (from the formula)
 		imull $2, %eax # multiply by 2
 		# %eax is at the starting location
 
@@ -171,16 +178,16 @@ city_loop:
 		popl %ecx
 
 		# update counters
-		addl $1, %edi
+		addl $1, %edi # increment width counter
 		cmpl $5, %edi # check if we are done with the current city (width of 5)
 		je done_city
-		addl $2, %eax
-		addl $1, %esi
+		addl $2, %eax # move to next location to print
+		addl $1, %esi # increment the index of the pic we are drawing
 		jmp city_loop
 
 done_city:
-		addl $1, %ebx
-		rorl $8, %edx
+		addl $1, %ebx # increment city tracker
+		rorl $8, %edx # move to next city in base_alive
 		cmpl $4, %ebx # check if we are done with all cities
 		jne base_loop
 
@@ -200,7 +207,7 @@ redraw_crosshairs:
 		movl crosshairs_y, %edx
 		movl crosshairs_x, %esi 
 
-		imull $160, %edx # 2 * 80 * y
+		imull $160, %edx # this is 2 * 80 * y
 		imull $2, %esi # + 2 * x
 
 		addl %edx, %esi
@@ -221,7 +228,13 @@ redraw_crosshairs:
 		leave
 		ret
 
-# inputs - previous node, current node
+# void update_missiles(struct missile* previous, struct missile* current)
+# iterates through all missiles in the linked list, and process them,
+# meaning either moving to next location or causing explosion
+# Inputs:	struct missile *previous - previous node
+# 			struct missile *current - current node
+# Outputs:	none
+# Registers: Standard C calling convention
 update_missiles:
 		pushl %ebp
 		movl %esp, %ebp
@@ -243,8 +256,8 @@ missile_iteration:
 		shrl $16, %eax
 
 		# erase missile at old location
-		imull $160, %edx
-		imull $2, %eax
+		imull $160, %edx # this is 2 * 80 * y
+		imull $2, %eax # + 2 * x
 
 		addl %edx, %eax # now the old byte location is stored in %eax
 
@@ -274,20 +287,20 @@ processing:
 		movl X(%ebx), %edx
 		movl Y(%ebx), %ecx
 		shrl $16, %edx # right shift by 16 to access high 16 bits
-		shrl $16, %ecx
+		shrl $16, %ecx # same for this one
 		cmpl $0, %edx
-		jl out_of_bounds
+		jl out_of_bounds # out of bounds, x less than 0
 		cmpl $0, %ecx
-		jl out_of_bounds
+		jl out_of_bounds # out of bounds, y less than 0
 		cmpl $79, %edx
-		jg out_of_bounds
+		jg out_of_bounds # out of bounds, x greater than 79
 		cmpl $24, %ecx
-		jg out_of_bounds
+		jg out_of_bounds # out of bounds, y greater than 24
 		jmp in_bounds
 
 out_of_bounds:
 		# remove the missile from the list if out of bounds
-		movl %ebx, %edx # store current node
+		movl %ebx, %edx # store current node to input into function
 		movl NEXT(%ebx), %ebx # go to next missile
 		pushl %eax
 		pushl %ecx
@@ -310,9 +323,9 @@ in_bounds:
 		shrl $16, %edx
 		shrl $16, %ecx # get the location of x and y
 		cmpl %edx, DEST_Y(%ebx)
-		jne simply_moving
+		jne simply_moving # did not reach y destination, so simply moving
 		cmpl %ecx, DEST_X(%ebx)
-		jne simply_moving
+		jne simply_moving # did not reach x destination, so simply moving
 
 exploding:
 		# need to caller-save %ecx and %edx
@@ -330,7 +343,7 @@ exploding:
 		cmpl $0, %eax
 		je continue
 		
-		cmpl $0, %esi
+		cmpl $0, %esi # check the flag to see if we already called
 		jne continue
 		# call mp1_notify_user
 		pushl %eax
@@ -340,13 +353,13 @@ exploding:
 		popl %edx
 		popl %ecx
 		popl %eax
-		addl $1, %esi
+		addl $1, %esi # set flag to 1 since we called the notify_user
 
 continue:
 		# decrement exploded field for the missile
 		decl EXPLODED(%ebx)
 		cmpl $0, EXPLODED(%ebx)
-		je finished_exploding
+		je finished_exploding # finished exploding if exploded field is 0
 		
 		# still exploding, draw to screen
 		movl Y(%ebx), %edx
@@ -355,14 +368,14 @@ continue:
 		shrl $16, %ecx # get the location of x and y
 
 		# find byte location, 80 * y * 2 + x * 2
-		imull $160, %edx # 80 * 2 * y
+		imull $160, %edx # this is 80 * 2 * y
 		imull $2, %ecx # + 2 * x
 
 		addl %edx, %ecx
 		movl %ecx, %eax # now the new byte location is stored in %eax
 
 		# draw missile at new location
-		movb $EXPLOSION, %cl
+		movb $EXPLOSION, %cl # move character we want to draw into %cl
 		pushl %ecx
 		pushl %edx
 		call mp1_poke
@@ -389,7 +402,7 @@ finished_exploding: # finished exploding, erase missile, and remove missile from
 
 simply_moving:
 		# draw it in the new location (new location is x: %edx, y: %ecx)
-		imull $160, %edx # 80 * 2 * y
+		imull $160, %edx # this is 80 * 2 * y
 		imull $2, %ecx # + 2 * x
 
 		addl %edx, %ecx
@@ -415,8 +428,14 @@ finished_list:
 		leave
 		ret
 
-# input - previous missile node, current missile node
-# remove missile from linked list, and free from memory
+# void mp1_missile_remove(struct missile* previous, struct missile* current)
+# removes the missile from list, and free from memory
+# function does not return anything, so the caller has to update
+# the previous and current node on their end
+# Inputs:	struct missile *previous - previous node
+# 			struct missile *current - current node
+# Outputs:	none
+# Registers: Standard C calling convention
 mp1_missile_remove:
 		pushl %ebp
 		movl %esp, %ebp
@@ -457,11 +476,15 @@ end_of_missile_remove:
 		popl %edi
 		popl %esi
 		popl %ebx
-
 		leave
 		ret
 
-# need to callee-save %ebx, %esi, and %edi for these
+# need to callee-save %ebx, %esi, and %edi for all ioctls
+# void mp1_ioctl_startgame(unsigned long ignore)
+# starts the game and initializes the global variables properly
+# Inputs: unsigned long ignore
+# Outputs: none
+# Registers: Standard C calling convention
 mp1_ioctl_startgame:
 		pushl %ebp
 		movl %esp, %ebp
@@ -473,9 +496,9 @@ mp1_ioctl_startgame:
 		movl $12, crosshairs_y
 		movl $40, crosshairs_x
 
-		movl $0, mp1_score
+		movl $0, mp1_score # start with score of 0
 		movl $0x00FFFFFF, base_alive # low 3 bytes are alive cities, highest bit is padding
-		movl $0, mp1_missile_list
+		movl $0, mp1_missile_list # start with list of no missiles
 
 		popl %edi
 		popl %esi
@@ -483,6 +506,12 @@ mp1_ioctl_startgame:
 		leave
 		ret
 
+# void mp1_ioctl_addmissile(struct missile* user_missile)
+# adds a missile to the front of the linked list and return 0,
+# or returns -1 if failed
+# Inputs: struct missile* user_missile
+# Outputs: 0 if success, -1 if fail
+# Registers: Standard C calling convention
 mp1_ioctl_addmissile:
 		pushl %ebp
 		movl %esp, %ebp
@@ -491,7 +520,7 @@ mp1_ioctl_addmissile:
 		pushl %edi
 
 		movl 8(%ebp), %ebx # load the missile into %ebx
-		pushl %ecx
+		pushl %ecx # caller-save %ecx and %edx
 		pushl %edx
 		# call mp1_malloc
 		pushl $36
@@ -545,6 +574,12 @@ return_addmissile:
 		leave
 		ret
 
+# void mp1_ioctl_movexhairs(unsigned long xhair_delta_packed)
+# move the crosshair to corresponding location
+# depending on what key was pressed
+# Inputs: unsigned long xhair_delta_packed, indicates direction crosshair moves
+# Outputs: 0
+# Registers: Standard C calling convention
 mp1_ioctl_movexhairs:
 		pushl %ebp
 		movl %esp, %ebp
@@ -556,7 +591,7 @@ mp1_ioctl_movexhairs:
 		movl crosshairs_y, %edx
 		movl crosshairs_x, %esi 
 
-		imull $160, %edx # 80 * 2 * y
+		imull $160, %edx # this is 80 * 2 * y
 		imull $2, %esi # + 2 * x
 
 		addl %edx, %esi
@@ -604,7 +639,7 @@ draw_new_crosshair:
 		movl %esi, crosshairs_x
 
 		# then draw crosshair at the new location
-		imull $160, %edx # 2 * 80 * y
+		imull $160, %edx # this is 2 * 80 * y
 		imull $2, %esi # + 2 * x
 
 		addl %edx, %esi
@@ -626,6 +661,12 @@ finished_movexhairs:
 		leave
 		ret
 
+# void mp1_ioctl_getstatus(unsigned long* user_stastus)
+# checks the status of the cities (dead/alive) and
+# the score, and copies information to user
+# Inputs: unsigned long* user_stastus
+# Outputs: 0 if success, -1 if fail
+# Registers: Standard C calling convention
 mp1_ioctl_getstatus:
 		pushl %ebp
 		movl %esp, %ebp
@@ -633,30 +674,30 @@ mp1_ioctl_getstatus:
 		pushl %esi
 		pushl %edi
 
-		xorl %ebx, %ebx
+		xorl %ebx, %ebx # reset %ebx to 0
 		movw mp1_score, %bx # move score into first 16 bits
 		rorl $16, %ebx # rotate so we can edit 16th, 17th, and 18th bit
 
 check_city_1:
 		# checking city 1, add 1 to 1st bit if alive (will be rotated to 16th bit)
 		movl base_alive, %edx
-		cmpb $0, %dl
+		cmpb $0, %dl # check last byte to see if dead or alive
 		je check_city_2
 		addl $1, %ebx
 
 check_city_2:
 		# checking city 2, add 1 to 1st bit if alive (will be rotated to 17th bit)
 		rorl $1, %ebx # rotate to edit 17th bit
-		rorl $8, %edx
-		cmpb $0, %dl
+		rorl $8, %edx # check next city
+		cmpb $0, %dl # check last byte to see if dead or alive
 		je check_city_3
 		addl $1, %ebx
 
 check_city_3:
 		# checking city 3, add 1 to 1st bit if alive (will be rotated to 18th bit)
 		rorl $1, %ebx # rotate to edit 18th bit
-		rorl $8, %edx
-		cmpb $0, %dl
+		rorl $8, %edx # check next city
+		cmpb $0, %dl # check last byte to see if dead or alive
 		je done_checking_cities
 		addl $1, %ebx
 
@@ -665,13 +706,12 @@ done_checking_cities:
 		# send back to user from kernel
 		pushl %ecx
 		pushl %edx
-		
 		pushl $4 # allocate 4 bytes
 		call mp1_malloc
 		addl $4, %esp
-
 		popl %edx
 		popl %ecx
+
 		movl %eax, %edi # save malloc space for later when we free
 		movl %ebx, (%eax) # move %ebx into the newly allocated memory
 
@@ -714,6 +754,11 @@ return_status:
 		leave
 		ret
 
+# void mp1_ioctl_endgame(unsigned long ignore)
+# frees all missiles from memory since the game ended
+# Inputs: unsigned long ignore
+# Outputs: 0
+# Registers: Standard C calling convention
 mp1_ioctl_endgame:
 		pushl %ebp
 		movl %esp, %ebp
